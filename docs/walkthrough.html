@@ -123,6 +123,16 @@
 
   hr.sep { border: 0; border-top: 1px dashed var(--border); margin: 28px 0; }
 
+  /* Code snippet figures */
+  figure.code-snippet { margin: 14px 0; border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; background: var(--code-bg); }
+  figure.code-snippet figcaption { display: flex; justify-content: space-between; align-items: center;
+    background: var(--bg-elev); border-bottom: 1px solid var(--border);
+    padding: 7px 14px; font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+  figure.code-snippet .cs-path { color: var(--accent); }
+  figure.code-snippet .cs-lines { color: var(--text-dim); }
+  figure.code-snippet pre { border: none; border-radius: 0; margin: 0; }
+
   .scroll-progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent);
     width: 0%; z-index: 100; transition: width 0.1s; }
 </style>
@@ -280,21 +290,19 @@ classDiagram
       <h3 id="abs-trainer">3.1 Trainer</h3>
       <p>Every training mode (<code>sft.py</code>, <code>rm.py</code>, <code>dpo.py</code>, <code>ppo.py</code>) extends <code>Trainer</code>. The base class only handles checkpoint resume + wandb. The subclass <em>is</em> the algorithm, written as a flat Python loop:</p>
 
-```49:86:RL2/trainer/base.py
-def load_ckpt(self, workers: Sequence[Worker]) -> int:
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/trainer/base.py</span><span class="cs-lines">L49–86</span></figcaption><pre><code class="language-python">def load_ckpt(self, workers: Sequence[Worker]) -&gt; int:
 
     if self.load_dir is None:
         return 0
     for worker in workers:
-        worker_name = "actor" if "Actor" in worker.__class__.__name__ else "critic"
-        worker.load_ckpt(f"{self.load_dir}/{worker_name}/optimizer_scheduler")
+        worker_name = &quot;actor&quot; if &quot;Actor&quot; in worker.__class__.__name__ else &quot;critic&quot;
+        worker.load_ckpt(f&quot;{self.load_dir}/{worker_name}/optimizer_scheduler&quot;)
 
     ckpt = self._get_ckpt(0)
-    dcp.load(ckpt, checkpoint_id=f"{self.load_dir}/trainer")
+    dcp.load(ckpt, checkpoint_id=f&quot;{self.load_dir}/trainer&quot;)
     if dist.get_rank() == 0:
-        self.train_dataloader.load_state_dict(ckpt["dataloader"])
-    return ckpt["step"]
-```
+        self.train_dataloader.load_state_dict(ckpt[&quot;dataloader&quot;])
+    return ckpt[&quot;step&quot;]</code></pre></figure>
 
       <h3 id="abs-worker">3.2 Worker — Actor &amp; Critic</h3>
       <p><code>Worker</code> is just <code>{config, train, tokenizer}</code>. The interesting layer is <code>FSDPWorker</code> which sets up two device meshes:</p>
@@ -304,10 +312,9 @@ def load_ckpt(self, workers: Sequence[Worker]) -> int:
         <li><strong><code>device_mesh = (dp, cp, tp)</code></strong> — used for data scattering and ring-attention along the sequence dimension.</li>
       </ul>
 
-```28:48:RL2/workers/fsdp/base.py
-self.model_device_mesh = dist.device_mesh.init_device_mesh(
-    "cuda",
-    mesh_dim_names=("ddp", "fsdp", "tp"),
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/workers/fsdp/base.py</span><span class="cs-lines">L28–48</span></figcaption><pre><code class="language-python">self.model_device_mesh = dist.device_mesh.init_device_mesh(
+    &quot;cuda&quot;,
+    mesh_dim_names=(&quot;ddp&quot;, &quot;fsdp&quot;, &quot;tp&quot;),
     mesh_shape=(
         config.ddp_size,
         world_size // (config.ddp_size * config.tp_size),
@@ -316,17 +323,16 @@ self.model_device_mesh = dist.device_mesh.init_device_mesh(
 )
 
 assert world_size % (config.cp_size * config.tp_size) == 0, \
-    f"World_size {world_size} must be divisible by cp_size {config.cp_size} * tp_size {config.tp_size}."
+    f&quot;World_size {world_size} must be divisible by cp_size {config.cp_size} * tp_size {config.tp_size}.&quot;
 self.device_mesh = dist.device_mesh.init_device_mesh(
-    "cuda",
-    mesh_dim_names=("dp", "cp", "tp"),
+    &quot;cuda&quot;,
+    mesh_dim_names=(&quot;dp&quot;, &quot;cp&quot;, &quot;tp&quot;),
     mesh_shape=(
         world_size // (config.cp_size * config.tp_size),
         config.cp_size,
         config.tp_size
     )
-)
-```
+)</code></pre></figure>
 
       <p><code>FSDPActor</code> adds the model + the four "ops" the trainer calls: <code>compute_logps</code>, <code>sft_step</code>, <code>dpo_step</code>, <code>ppo_update</code>, plus <code>update_rollout</code> for weight sync. <code>FSDPCritic</code> uses <code>AutoModelForTokenClassification</code> with one label head and exposes <code>compute_values</code>, <code>rm_step</code>, <code>ppo_update</code>.</p>
 
@@ -337,8 +343,7 @@ self.device_mesh = dist.device_mesh.init_device_mesh(
       <h3 id="abs-rollout">3.3 Rollout</h3>
       <p><code>Rollout</code> is the only worker that doesn't hold model weights. On rank 0 it owns the dataloader + an SGLang router process; on every TP-rank-0 it spawns an SGLang server process. <code>__call__(train, step)</code> drives the entire rollout phase, returning a packed <code>tensor_dict</code> ready for training.</p>
 
-```67:93:RL2/workers/rollout.py
-class Rollout:
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/workers/rollout.py</span><span class="cs-lines">L67–93</span></figcaption><pre><code class="language-python">class Rollout:
 
     def __init__(self, config: DictConfig):
         
@@ -362,74 +367,69 @@ class Rollout:
 
         dist.barrier(group=get_gloo_group())
         
-        if self.device_mesh["tp"].get_local_rank() == 0:
-            self._launch_server_process()
-```
+        if self.device_mesh[&quot;tp&quot;].get_local_rank() == 0:
+            self._launch_server_process()</code></pre></figure>
 
       <h3 id="abs-dataset">3.4 Dataset / Sample / SampleGroup</h3>
       <p>SFT/RM/DPO datasets each return a <em>tensor_dict</em> directly. The PPO dataset is different — its items are <code>SampleGroup</code> objects (a group of <code>responses_per_prompt</code> rollouts of the same prompt) so that GRPO-style group-baseline normalization is natural.</p>
 
-```16:50:RL2/datasets/rl.py
-@dataclass
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/datasets/rl.py</span><span class="cs-lines">L16–50</span></figcaption><pre><code class="language-python">@dataclass
 class Sample:
 
     class Status(Enum):
 
-        RUNNING = "running"
-        ABORTED = "aborted"
-        DONE = "done"
+        RUNNING = &quot;running&quot;
+        ABORTED = &quot;aborted&quot;
+        DONE = &quot;done&quot;
 
     # for initialization
     sample: Dict[str, Any] = field(default_factory=dict)
 
     # for environment interaction
-    state_text: str = ""
-    action_text: str = ""
+    state_text: str = &quot;&quot;
+    action_text: str = &quot;&quot;
 
     # for training
     state_dict: Dict[str, List[int | float]] = field(default_factory=dict)
-    state_dicts: List[Dict[str, List[int | float]]] = field(default_factory=list)
-```
+    state_dicts: List[Dict[str, List[int | float]]] = field(default_factory=list)</code></pre></figure>
 
       <p>A <code>Sample</code> is a small state machine: it can be <em>RUNNING</em>, <em>ABORTED</em> (used for partial rollout / preemption), or <em>DONE</em>. Each turn appends LLM tokens then env tokens to <code>state_dict</code>; if the env's <code>next_state</code> is not a prefix of the previous state, the sample becomes a multi-sequence trajectory.</p>
 
       <h3 id="abs-env">3.5 Environment</h3>
       <p>The user contract is a single async function (or two, if you want full control of the loop):</p>
 
-```6:36:envs/countdown.py
-async def env_step(sample: Sample) -> Dict[str, Any]:
+<figure class="code-snippet"><figcaption><span class="cs-path">envs/countdown.py</span><span class="cs-lines">L6–36</span></figcaption><pre><code class="language-python">async def env_step(sample: Sample) -&gt; Dict[str, Any]:
 
     env_response = {
-        "next_state": None,
-        "done": True,
-        "reward": 0.0
+        &quot;next_state&quot;: None,
+        &quot;done&quot;: True,
+        &quot;reward&quot;: 0.0
     }
 
-    match = re.search(r"<answer>(.*?)</answer>", sample.action_text)
+    match = re.search(r&quot;&lt;answer&gt;(.*?)&lt;/answer&gt;&quot;, sample.action_text)
     if match is None:
         return env_response
     equation = match.group(1).strip()
-    env_response["reward"] = 0.1
+    env_response[&quot;reward&quot;] = 0.1
     
     try:
         # maybe the number cannot be converted to integer
-        numbers = [int(n) for n in re.findall(r"\d+", equation)]
-        assert sorted(numbers) == sorted(sample.sample["numbers"])
+        numbers = [int(n) for n in re.findall(r&quot;\d+&quot;, equation)]
+        assert sorted(numbers) == sorted(sample.sample[&quot;numbers&quot;])
     except:
         return env_response
         
     try:
-        assert re.match(r"^[\d+\-*/().\s]+$", equation)
+        assert re.match(r&quot;^[\d+\-*/().\s]+$&quot;, equation)
         # maybe the equation is illegal
-        result = eval(equation, {"__builtins__": None}, {})
-        assert abs(result - sample.sample["target"]) < 1e-5
-        env_response["reward"] = 1.0
+        result = eval(equation, {&quot;__builtins__&quot;: None}, {})
+        assert abs(result - sample.sample[&quot;target&quot;]) &lt; 1e-5
+        env_response[&quot;reward&quot;] = 1.0
     except:
         pass
     return env_response
 
-generate = partial(base_generate, env_step_fn=env_step)
-```
+generate = partial(base_generate, env_step_fn=env_step)</code></pre></figure>
 
       <p><code>base_generate</code> in <code>RL2/datasets/rl.py</code> is the prebuilt rollout loop that uses <code>env_step</code>. The env file just needs a module-level <code>generate</code> callable; the trainer points to it via <code>rollout.env_path=envs/countdown.py</code>.</p>
     </section>
@@ -482,8 +482,7 @@ generate = partial(base_generate, env_step_fn=env_step)
       <h2>5. PPO loop, line by line</h2>
       <p class="lede">This is the heart of the codebase. Everything else exists to support these ~30 lines.</p>
 
-```43:91:RL2/trainer/ppo.py
-async def train(self):
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/trainer/ppo.py</span><span class="cs-lines">L43–91</span></figcaption><pre><code class="language-python">async def train(self):
 
     if self.config.trainer.eval_only:
         await self.rollout(False, 0)
@@ -491,7 +490,7 @@ async def train(self):
 
     initial = self.load_ckpt(
         (self.actor, self.critic)
-        if self.config.adv.estimator == "gae"
+        if self.config.adv.estimator == &quot;gae&quot;
         else (self.actor,)
     )
     for step in trange(
@@ -503,30 +502,29 @@ async def train(self):
 
         tensor_dict, cu_seqs = await self.rollout(True, step)
 
-        if self.config.actor.kl.coef > 0:
+        if self.config.actor.kl.coef &gt; 0:
             tensor_dict = self.ref_actor.compute_logps(tensor_dict, step)
-        if self.config.adv.estimator == "gae":
+        if self.config.adv.estimator == &quot;gae&quot;:
             tensor_dict = self.critic.compute_values(tensor_dict, step)
-        if self.config.actor.kl.coef > 0 or self.config.actor.update_per_rollout > 1:
+        if self.config.actor.kl.coef &gt; 0 or self.config.actor.update_per_rollout &gt; 1:
             tensor_dict = self.actor.compute_logps(tensor_dict, step)
 
         if dist.get_rank() == 0:
             compute_advantages(self.config, tensor_dict, cu_seqs, step)
 
         self.actor.ppo_update(tensor_dict, step)
-        if self.config.adv.estimator == "gae":
+        if self.config.adv.estimator == &quot;gae&quot;:
             self.critic.ppo_update(tensor_dict, step)
         self.save_ckpt(
             (self.actor, self.critic)
-            if self.config.adv.estimator == "gae"
+            if self.config.adv.estimator == &quot;gae&quot;
             else (self.actor,),
             step
         )
 
         self.actor.update_rollout(self.rollout, step)
         if self.config.trainer.test_freq is not None and step % self.config.trainer.test_freq == 0:
-            await self.rollout(False, step)
-```
+            await self.rollout(False, step)</code></pre></figure>
 
       <div class="mermaid">
 sequenceDiagram
@@ -597,8 +595,7 @@ flowchart TB
       <h3>The packing step (<code>RL2/utils/sequences.py</code>)</h3>
       <p><code>_tensor_dict_to_minibatches</code> takes the flat list of variable-length sequences and uses Karmarkar–Karp bin packing to produce <em>k</em> balanced minibatches whose token totals are roughly equal and whose count is divisible by the number of update steps per rollout.</p>
 
-```17:39:RL2/utils/sequences.py
-"""
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/utils/sequences.py</span><span class="cs-lines">L17–39</span></figcaption><pre><code class="language-python">&quot;&quot;&quot;
 Pack sequences into minibatches for higher throughput.
 There are two constrains:
   * The number of minibatches must be multiple of `multiple_of`
@@ -610,9 +607,8 @@ than the value, we pack sequences into `n_minibatches` minibatches
 and check whether the second constraint is satisfied. If not, we 
 increase `n_minibatches` by `multiple_of` (so that the first 
 constraint is always satisfied) and repeat the loop.
-"""
-seq_len_list = (tensor_dict["eos_mask"].argmax(-1) + 1).tolist()
-```
+&quot;&quot;&quot;
+seq_len_list = (tensor_dict[&quot;eos_mask&quot;].argmax(-1) + 1).tolist()</code></pre></figure>
 
       <div class="callout warn">
         <strong>Gotcha:</strong> <code>scatter_data</code> uses module-level globals (<code>SHUFFLE_INDICES</code>, <code>PAD_SEQUENCES</code>) so the matching <code>gather_data</code> can undo the partition. This means you can't have two scatter/gather calls in flight on different threads.
@@ -641,8 +637,7 @@ seq_len_list = (tensor_dict["eos_mask"].argmax(-1) + 1).tolist()
 
       <h3>FSDP wrap policy</h3>
 
-```44:53:RL2/utils/fsdp/data_parallelism.py
-return FSDP(
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/utils/fsdp/data_parallelism.py</span><span class="cs-lines">L44–53</span></figcaption><pre><code class="language-python">return FSDP(
     model,
     auto_wrap_policy=auto_wrap_policy,
     sharding_strategy=ShardingStrategy.HYBRID_SHARD,
@@ -651,8 +646,7 @@ return FSDP(
     sync_module_states=sync_module_states,
     device_mesh=device_mesh,
     device_id=torch.cuda.current_device()
-)
-```
+)</code></pre></figure>
 
       <h3>Context parallelism — Zigzag ring attention</h3>
       <p>Sequences are split along the time dimension across <code>cp_size</code> ranks using a zigzag pattern (chunk <em>i</em> and chunk <em>2c−i−1</em> on rank <em>i</em>) so each rank carries a balanced amount of causal-attention work. The attention forward is replaced by <code>zigzag_ring_flash_attn_varlen_func</code> via a global monkeypatch in <code>RL2/utils/fsdp/context_parallelism.py</code>.</p>
@@ -678,14 +672,13 @@ return FSDP(
         </tbody>
       </table>
 
-```180:222:RL2/utils/algorithms.py
-def actor_ppo_loss(
+<figure class="code-snippet"><figcaption><span class="cs-path">RL2/utils/algorithms.py</span><span class="cs-lines">L180–222</span></figcaption><pre><code class="language-python">def actor_ppo_loss(
     config: DictConfig, minibatch: Dict[str, torch.Tensor]
-) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+) -&gt; Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
     ratio = torch.exp(
-        minibatch["logps"] - minibatch.get(
-            "old_logps", minibatch["logps"].detach()
+        minibatch[&quot;logps&quot;] - minibatch.get(
+            &quot;old_logps&quot;, minibatch[&quot;logps&quot;].detach()
         )
         # We do not compute old_logps
         # if kl.coef == 0 and update_per_rollout == 1
@@ -693,10 +686,9 @@ def actor_ppo_loss(
     clipped_ratio = torch.clamp(
         ratio, 1 - config.clip, 1 + config.clip
     )
-    objective = minibatch["advantages"] * ratio
-    clipped_objective = minibatch["advantages"] * clipped_ratio
-    losses = - torch.min(objective, clipped_objective)
-```
+    objective = minibatch[&quot;advantages&quot;] * ratio
+    clipped_objective = minibatch[&quot;advantages&quot;] * clipped_ratio
+    losses = - torch.min(objective, clipped_objective)</code></pre></figure>
 
       <div class="callout">
         <strong>Algorithm dial:</strong> the same <code>actor_ppo_loss</code> + <code>compute_advantages</code> implements REINFORCE, Dr. GRPO (default), GRPO, and OpenAI PPO. Switching between them is a matter of toggling <code>adv.estimator</code>, <code>kl.type</code>, <code>actor.avg_level</code>, and <code>adv.norm_var</code>. Read the README "Algorithm" section for the exact dial settings.
